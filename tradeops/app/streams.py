@@ -1,0 +1,1 @@
+"""Trading stream adapter."""

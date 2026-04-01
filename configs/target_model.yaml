@@ -1,0 +1,10 @@
+allocations:
+  - symbol: VTI
+    target_weight: 0.50
+  - symbol: VXUS
+    target_weight: 0.20
+  - symbol: BND
+    target_weight: 0.30
+drift_threshold_percent: 5
+min_trade_notional: 100
+cash_buffer: 500
