@@ -129,8 +129,6 @@ Recommended next action: build a rebalance plan to reduce leveraged concentratio
 
 ### 2. TLH Analysis
 
-TLH is analysis-only unless the CLI gains first-class support.
-
 Use:
 
 - one sentence max of interpretation
@@ -297,6 +295,71 @@ If a user asks for TLH:
    - `tradeops portfolio status`
    - `tradeops rebalance --target-json ...`
 6. If the user wants true CLI-backed TLH support, say that a dedicated deterministic TLH command needs to be added first.
+
+### ETF TLH Replacement Rules
+
+When doing TLH analysis for ETFs:
+
+- use [`tlh_etf_asset_classes_final.json`](/Users/apurvgandhi/alpaca_cli/tlh_etf_asset_classes_final.json) as the first local replacement universe
+- prefer replacements from the same asset class bucket with a different issuer, structure, or leverage profile when appropriate
+- treat the JSON as a deterministic lookup aid, not as legal/tax authority
+- if the local JSON is insufficient or ambiguous, verify ETF holdings and product structure from current sources before suggesting a replacement
+- do not collapse two different ideas into one:
+  - `clean replacement`: intended to preserve similar exposure while reducing wash-sale risk
+  - `de-risking alternative`: intentionally changes exposure or leverage and should be labeled that way
+
+### ETF Source Selection Rules
+
+Use sources by question type:
+
+- `portfolio look-through` or `current economic exposure`
+  - use primary issuer or sponsor sources first
+  - examples: fund sponsor pages, issuer holdings pages, index sponsor pages
+  - use ETFDB as a secondary cross-check, not the primary basis for current exposure math
+
+- `ETF replacement closeness`, `wash-sale-sensitive comparison`, or `how similar are these two ETFs`
+  - use ETFDB comparison pages early because they are efficient for side-by-side structure and holdings review
+  - then verify critical details from primary sources if the replacement decision is important or ambiguous
+
+- `single ETF background check`
+  - use ETFDB single-fund pages for fast orientation
+  - then use sponsor pages if you need authoritative holdings, benchmark, or leverage details
+
+When explaining source choice to the user:
+
+- do not sound defensive
+- say briefly why the chosen source fits the question
+- if ETFDB was not used for a look-through report, explain that primary issuer sources are better for current exposure math
+- if ETFDB was used, explain that it was for efficient comparison rather than legal authority
+
+### ETF TLH Suggestion Rules
+
+- If the local JSON marks an ETF pair as gray, do not present it as a clean TLH replacement.
+- If the local JSON says no alternate same-exposure ETF is available, do not invent one.
+- If stepping down leverage or changing structure is suggested, label it explicitly as a de-risking alternative, not a like-for-like replacement.
+- If leverage is central to the original product, do not default to a 1x ETF without saying that the user is materially changing exposure for the wash-sale window.
+- If the ETF is missing from the local JSON, say the mapping is incomplete and verify the suggestion from current fund sources before recommending anything.
+
+Examples from the local JSON:
+
+- `UPRO` vs `SPXL`: same index and same 3x daily objective; treat as gray, not clean
+- `TQQQ`: no alternate 3x Nasdaq-100 ETF is listed; do not present `QQQ` or `QQQM` as clean replacements
+- if suggesting `VOO`, `IVV`, `QQQ`, `QQQM`, `SSO`, or `QLD` in these cases, describe them as exposure changes or leverage step-down alternatives
+
+Preferred ETF verification sources:
+
+- single ETF holdings page:
+  - `https://etfdb.com/etf/VOO/#holdings`
+- ETF comparison holdings page:
+  - `https://etfdb.com/tool/etf-comparison/SPXL-UPRO/#holdings`
+
+When using ETFDB for TLH comparison:
+
+- use the single-ETF page to inspect holdings, issuer, and basic structure
+- use the comparison page when judging how close two ETF products are
+- pay attention to issuer, benchmark, leverage, and non-equity collateral holdings
+- do not rely on ticker name similarity alone
+- if there is meaningful uncertainty about "substantially identical," say so clearly and prefer the more conservative replacement
 
 ## Decision Defaults
 

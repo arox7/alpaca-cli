@@ -90,6 +90,20 @@ The system helps users inspect portfolios and build deterministic rebalance plan
   - recommend the nearest supported CLI-backed next action:
     - `tradeops portfolio status`
     - `tradeops rebalance --target-json ...`
+  - for ETF TLH, use `tlh_etf_asset_classes_final.json` as the first local replacement lookup
+  - if replacement closeness is uncertain, verify ETF structure and holdings from current ETF sources before recommending a substitute
+  - distinguish clearly between:
+    - clean replacement candidates that aim to preserve similar exposure
+    - de-risking alternatives that intentionally change leverage or structure
+  - do not label leverage step-down ideas like `UPRO -> VOO` or `TQQQ -> QQQM` as clean replacements; those are exposure changes
+  - if the local JSON marks a pair as gray or says no discussed alternate exists, say so plainly instead of overstating confidence
+  - use ETFDB under the right scenario:
+    - ETF comparison and wash-sale-sensitive substitution questions: use ETFDB early
+    - single ETF orientation: ETFDB is useful for quick background
+    - current look-through and exposure math: prefer issuer/sponsor primary sources first, with ETFDB as a secondary cross-check
+  - ETFDB patterns that are useful for this:
+    - single ETF holdings: `https://etfdb.com/etf/VOO/#holdings`
+    - ETF comparison holdings: `https://etfdb.com/tool/etf-comparison/SPXL-UPRO/#holdings`
 
 ## Rebalance Semantics
 
