@@ -1,0 +1,82 @@
+name: Daily TLH Report
+
+on:
+  schedule:
+    - cron: "0 19 * * *"
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  daily-tlh-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Gate to 3 PM New York
+        id: gate
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          now_ny = datetime.now(ZoneInfo("America/New_York"))
+          proceed = event_name == "workflow_dispatch" or now_ny.hour == 15
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"proceed={'true' if proceed else 'false'}\n")
+              fh.write(f"now_ny={now_ny.isoformat()}\n")
+          print(f"New York time: {now_ny.isoformat()}")
+          print(f"Proceed: {proceed}")
+          PY
+
+      - name: Install package
+        if: steps.gate.outputs.proceed == 'true'
+        run: python -m pip install -e .
+
+      - name: Capture fresh portfolio snapshot
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          TRADEOPS_ALPACA_API_KEY: ${{ secrets.TRADEOPS_ALPACA_API_KEY }}
+          TRADEOPS_ALPACA_SECRET_KEY: ${{ secrets.TRADEOPS_ALPACA_SECRET_KEY }}
+          TRADEOPS_ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          TRADEOPS_ALPACA_DATA_FEED: iex
+        run: |
+          mkdir -p artifacts
+          python -m tradeops.app.cli portfolio status > artifacts/portfolio.json
+
+      - name: Generate daily TLH report and send email
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: google/gemini-3-flash-preview
+          TLH_REPORT_TO_EMAIL: ${{ secrets.TLH_REPORT_TO_EMAIL }}
+          TLH_REPORT_FROM_EMAIL: ${{ secrets.TLH_REPORT_FROM_EMAIL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          python scripts/daily_tlh_report.py \
+            --portfolio-json artifacts/portfolio.json \
+            --prompt-file tlh_prompt.md \
+            --etf-map tlh_etf_asset_classes_final.json \
+            --output-markdown artifacts/daily_tlh_report.md \
+            --output-payload artifacts/daily_tlh_payload.json
+
+      - name: Upload artifacts
+        if: steps.gate.outputs.proceed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-tlh-report
+          path: artifacts/

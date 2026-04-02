@@ -1,0 +1,475 @@
+{
+  "generated_at": "2026-04-02",
+  "schema_version": "1.0",
+  "purpose": "Canonical ETF universe for tax-loss harvesting selection",
+  "scope": {
+    "included": "All ETFs explicitly discussed or referenced in this conversation",
+    "not_included": "Every ETF in the market; this file is limited to the ETFs covered in our discussion"
+  },
+  "selection_rules": [
+    "Choose substitutes from the same exposure bucket and the same leverage bucket.",
+    "Do not replace 1x ETFs with 2x or 3x ETFs.",
+    "Do not replace 2x ETFs with 1x or 3x ETFs.",
+    "Do not replace 3x ETFs with 1x or 2x ETFs.",
+    "Exclude the currently held ticker from substitute selection.",
+    "Prefer substitutes labeled clean before okay before gray.",
+    "Use extra caution with same-index pairs, especially when leverage and objective are also the same.",
+    "Watch wash-sale issues across taxable accounts, IRAs, spouse accounts, dividend reinvestment, and automated purchases."
+  ],
+  "asset_classes": {
+    "broad_us_equity_1x": {
+      "description": "Broad US stock market exposure",
+      "exposure": "broad_us_equity",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VTI",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "ITOT",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SCHB",
+          "issuer": "Schwab"
+        }
+      ]
+    },
+    "us_large_cap_1x": {
+      "description": "US large-cap equity exposure",
+      "exposure": "us_large_cap",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VOO",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "VV",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "VONE",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "SCHX",
+          "issuer": "Schwab"
+        },
+        {
+          "ticker": "SPY",
+          "issuer": "State Street",
+          "notes": [
+            "Same S&P 500 exposure as other S&P 500 funds; same-index substitutions are grayer."
+          ]
+        },
+        {
+          "ticker": "IVV",
+          "issuer": "iShares",
+          "notes": [
+            "Same S&P 500 exposure as other S&P 500 funds; same-index substitutions are grayer."
+          ]
+        }
+      ]
+    },
+    "us_mid_cap_1x": {
+      "description": "US mid-cap equity exposure",
+      "exposure": "us_mid_cap",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VO",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IJH",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "IMCG",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "us_small_cap_1x": {
+      "description": "US small-cap equity exposure",
+      "exposure": "us_small_cap",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VB",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IJR",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SCHA",
+          "issuer": "Schwab"
+        },
+        {
+          "ticker": "VXF",
+          "issuer": "Vanguard",
+          "notes": [
+            "Extended-market fund; usable in some contexts but not a perfect small-cap match."
+          ]
+        }
+      ]
+    },
+    "us_small_value_1x": {
+      "description": "US small-cap value exposure",
+      "exposure": "us_small_value",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VBR",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "AVUV",
+          "issuer": "Avantis"
+        },
+        {
+          "ticker": "IJS",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "us_growth_1x": {
+      "description": "US growth equity exposure",
+      "exposure": "us_growth",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VUG",
+          "issuer": "Vanguard",
+          "notes": [
+            "Often paired in the wild with other large-growth funds, but same-style exposure can be very close."
+          ]
+        },
+        {
+          "ticker": "IVW",
+          "issuer": "iShares",
+          "notes": [
+            "Often paired in the wild with other large-growth funds, but same-style exposure can be very close."
+          ]
+        }
+      ]
+    },
+    "us_value_1x": {
+      "description": "US value equity exposure",
+      "exposure": "us_value",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VTV",
+          "issuer": "Vanguard",
+          "notes": [
+            "Often paired in the wild with other large-value funds, but same-style exposure can be very close."
+          ]
+        },
+        {
+          "ticker": "IVE",
+          "issuer": "iShares",
+          "notes": [
+            "Often paired in the wild with other large-value funds, but same-style exposure can be very close."
+          ]
+        }
+      ]
+    },
+    "international_ex_us_1x": {
+      "description": "Broad international equity excluding US",
+      "exposure": "international_ex_us",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VXUS",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IXUS",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "VEU",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "SCHF",
+          "issuer": "Schwab",
+          "notes": [
+            "Coverage differs from broader ex-US funds; still a practical substitute in some cases."
+          ]
+        }
+      ]
+    },
+    "developed_markets_ex_us_1x": {
+      "description": "Developed markets excluding US",
+      "exposure": "developed_markets_ex_us",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VEA",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IEFA",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SCHF",
+          "issuer": "Schwab"
+        }
+      ]
+    },
+    "emerging_markets_1x": {
+      "description": "Emerging markets equity",
+      "exposure": "emerging_markets",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VWO",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IEMG",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SCHE",
+          "issuer": "Schwab"
+        }
+      ]
+    },
+    "us_aggregate_bonds_1x": {
+      "description": "Broad US taxable bond exposure",
+      "exposure": "us_aggregate_bonds",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "BND",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "AGG",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "IUSB",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SCHZ",
+          "issuer": "Schwab"
+        }
+      ]
+    },
+    "intermediate_treasuries_1x": {
+      "description": "Intermediate-duration US Treasury exposure",
+      "exposure": "intermediate_treasuries",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VGIT",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IEF",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "short_treasuries_1x": {
+      "description": "Short-duration US Treasury exposure",
+      "exposure": "short_treasuries",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VGSH",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "SHY",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "long_treasuries_1x": {
+      "description": "Long-duration US Treasury exposure",
+      "exposure": "long_treasuries",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VGLT",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "TLT",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "tips_1x": {
+      "description": "Treasury Inflation-Protected Securities",
+      "exposure": "tips",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "SCHP",
+          "issuer": "Schwab"
+        },
+        {
+          "ticker": "TIP",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "SPIP",
+          "issuer": "SPDR"
+        }
+      ]
+    },
+    "municipal_bonds_1x": {
+      "description": "National municipal bond exposure",
+      "exposure": "municipal_bonds",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VTEB",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "MUB",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "TFI",
+          "issuer": "SPDR"
+        }
+      ]
+    },
+    "international_bonds_1x": {
+      "description": "Broad international bond exposure",
+      "exposure": "international_bonds",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "BNDX",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "IAGG",
+          "issuer": "iShares"
+        }
+      ]
+    },
+    "us_reits_1x": {
+      "description": "US real estate / REIT exposure",
+      "exposure": "us_reits",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "VNQ",
+          "issuer": "Vanguard"
+        },
+        {
+          "ticker": "SCHH",
+          "issuer": "Schwab"
+        },
+        {
+          "ticker": "USRT",
+          "issuer": "iShares"
+        },
+        {
+          "ticker": "FREL",
+          "issuer": "Fidelity"
+        },
+        {
+          "ticker": "IYR",
+          "issuer": "iShares",
+          "notes": [
+            "Often treated as usable, though construction/style may differ more than the cleaner set."
+          ]
+        }
+      ]
+    },
+    "nasdaq_100_1x": {
+      "description": "Unleveraged Nasdaq-100 exposure",
+      "exposure": "nasdaq_100",
+      "leverage": "1x",
+      "etfs": [
+        {
+          "ticker": "QQQ",
+          "issuer": "Invesco",
+          "notes": [
+            "Included because it was referenced in discussion; do not treat as a substitute for 2x or 3x products."
+          ]
+        }
+      ]
+    },
+    "nasdaq_100_2x": {
+      "description": "2x daily Nasdaq-100 exposure",
+      "exposure": "nasdaq_100",
+      "leverage": "2x",
+      "etfs": [
+        {
+          "ticker": "QLD",
+          "issuer": "ProShares",
+          "notes": [
+            "No alternate 2x Nasdaq-100 ETF was discussed. Do not substitute with 1x or 3x funds."
+          ]
+        }
+      ]
+    },
+    "nasdaq_100_3x": {
+      "description": "3x daily Nasdaq-100 exposure",
+      "exposure": "nasdaq_100",
+      "leverage": "3x",
+      "etfs": [
+        {
+          "ticker": "TQQQ",
+          "issuer": "ProShares",
+          "notes": [
+            "No alternate 3x Nasdaq-100 ETF was discussed. Do not substitute with 1x or 2x funds."
+          ]
+        }
+      ]
+    },
+    "sp500_3x": {
+      "description": "3x daily S&P 500 exposure",
+      "exposure": "sp500",
+      "leverage": "3x",
+      "etfs": [
+        {
+          "ticker": "SPXL",
+          "issuer": "Direxion",
+          "notes": [
+            "SPXL and UPRO have the same index and same 3x daily objective; treat as gray rather than clean."
+          ]
+        },
+        {
+          "ticker": "UPRO",
+          "issuer": "ProShares",
+          "notes": [
+            "UPRO and SPXL have the same index and same 3x daily objective; treat as gray rather than clean."
+          ]
+        }
+      ]
+    },
+    "semiconductors_3x": {
+      "description": "3x daily semiconductor exposure",
+      "exposure": "semiconductors",
+      "leverage": "3x",
+      "etfs": [
+        {
+          "ticker": "SOXL",
+          "issuer": "Direxion",
+          "notes": [
+            "No alternate 3x semiconductor ETF was discussed. Do not substitute with 1x or 2x funds."
+          ]
+        }
+      ]
+    }
+  }
+}

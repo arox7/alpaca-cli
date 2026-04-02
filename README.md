@@ -134,6 +134,33 @@ Run a focused subset:
 pytest tests/test_cli.py tests/test_planning.py tests/test_alpaca_client.py
 ```
 
+## Daily TLH GitHub Action
+
+The repo includes a scheduled workflow at [.github/workflows/daily-tlh-report.yml](/Users/apurvgandhi/alpaca_cli/.github/workflows/daily-tlh-report.yml).
+
+What it does:
+
+- runs every day at `3 PM America/New_York`
+- captures a fresh paper portfolio snapshot with `tradeops portfolio status`
+- deterministically extracts all loss positions and wash-sale watch flags
+- sends the structured TLH input plus your editable [tlh_prompt.md](/Users/apurvgandhi/alpaca_cli/tlh_prompt.md) to OpenRouter
+- uses `google/gemini-3-flash-preview` by default
+- emails the resulting markdown memo to you
+
+Required GitHub secrets:
+
+- `TRADEOPS_ALPACA_API_KEY`
+- `TRADEOPS_ALPACA_SECRET_KEY`
+- `OPENROUTER_API_KEY`
+- `TLH_REPORT_TO_EMAIL`
+- `TLH_REPORT_FROM_EMAIL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+
+Prompt policy lives in [tlh_prompt.md](/Users/apurvgandhi/alpaca_cli/tlh_prompt.md). Edit that file to tune what the LLM should treat as worth suggesting.
+
 ## Design Rules
 
 - All broker actions become typed plans first.
