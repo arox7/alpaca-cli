@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
+import re
 import smtplib
 import sys
 import urllib.error
@@ -91,6 +93,96 @@ def _call_openrouter(payload: dict, prompt: str) -> str:
     return content.strip()
 
 
+def _format_inline_markdown(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
+    return escaped
+
+
+def markdown_to_html(markdown_report: str) -> str:
+    lines = [line.rstrip() for line in markdown_report.strip().splitlines()]
+    blocks: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+
+        if line.startswith("## "):
+            blocks.append(f"<h2>{_format_inline_markdown(line[3:])}</h2>")
+            i += 1
+            continue
+
+        if line.startswith("### "):
+            blocks.append(f"<h3>{_format_inline_markdown(line[4:])}</h3>")
+            i += 1
+            continue
+
+        if line.startswith("|"):
+            table_lines: list[str] = []
+            while i < len(lines) and lines[i].startswith("|"):
+                table_lines.append(lines[i])
+                i += 1
+            rows = []
+            for table_line in table_lines:
+                cells = [cell.strip() for cell in table_line.strip("|").split("|")]
+                rows.append(cells)
+            if len(rows) >= 2:
+                header = rows[0]
+                body = rows[2:]
+                thead = "".join(f"<th>{_format_inline_markdown(cell)}</th>" for cell in header)
+                tbody_rows = []
+                for row in body:
+                    tbody_rows.append(
+                        "<tr>" + "".join(f"<td>{_format_inline_markdown(cell)}</td>" for cell in row) + "</tr>"
+                    )
+                blocks.append(
+                    '<table class="report-table"><thead><tr>'
+                    + thead
+                    + "</tr></thead><tbody>"
+                    + "".join(tbody_rows)
+                    + "</tbody></table>"
+                )
+            continue
+
+        if line.startswith("- "):
+            items: list[str] = []
+            while i < len(lines) and lines[i].startswith("- "):
+                items.append(lines[i][2:])
+                i += 1
+            blocks.append(
+                "<ul>" + "".join(f"<li>{_format_inline_markdown(item)}</li>" for item in items) + "</ul>"
+            )
+            continue
+
+        paragraph_lines = [line]
+        i += 1
+        while i < len(lines) and lines[i].strip() and not lines[i].startswith(("## ", "### ", "|", "- ")):
+            paragraph_lines.append(lines[i])
+            i += 1
+        paragraph = " ".join(part.strip() for part in paragraph_lines)
+        blocks.append(f"<p>{_format_inline_markdown(paragraph)}</p>")
+
+    return (
+        "<html><head><style>"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"
+        "line-height:1.5;color:#111827;padding:20px;max-width:900px;margin:0 auto;}"
+        "h2,h3{color:#0f172a;margin:24px 0 12px;}"
+        "p{margin:12px 0;}"
+        ".report-table{border-collapse:collapse;width:100%;margin:14px 0 22px;}"
+        ".report-table th,.report-table td{border:1px solid #d1d5db;padding:8px 10px;text-align:left;vertical-align:top;}"
+        ".report-table th{background:#f3f4f6;font-weight:600;}"
+        "code{background:#f3f4f6;padding:1px 4px;border-radius:4px;}"
+        "ul{margin:12px 0 18px 20px;}"
+        "</style></head><body>"
+        + "".join(blocks)
+        + "</body></html>"
+    )
+
+
 def _send_email(markdown_report: str, as_of: datetime) -> None:
     recipient = os.environ["TLH_REPORT_TO_EMAIL"]
     sender = os.environ["TLH_REPORT_FROM_EMAIL"]
@@ -104,6 +196,7 @@ def _send_email(markdown_report: str, as_of: datetime) -> None:
     message["From"] = sender
     message["To"] = recipient
     message.set_content(markdown_report)
+    message.add_alternative(markdown_to_html(markdown_report), subtype="html")
 
     if smtp_port == 465:
         with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
