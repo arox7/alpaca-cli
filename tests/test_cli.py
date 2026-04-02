@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from tradeops.app.cli import app
-from tradeops.app.models import Account, PortfolioState, Position
+from tradeops.app.models import Account, Plan, PlanTransition, PlanType, PortfolioState, Position
 
 
 runner = CliRunner()
@@ -36,70 +37,73 @@ def _portfolio_state() -> PortfolioState:
     )
 
 
+class StubClient:
+    def __init__(self, fn) -> None:
+        self._fn = fn
+
+    def get_portfolio_state(self) -> PortfolioState:
+        return self._fn()
+
+
+def test_root_help_shows_only_expected_commands() -> None:
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "portfolio" in result.stdout
+    assert "rebalance" in result.stdout
+    assert "buy" not in result.stdout
+    assert "sell" not in result.stdout
+    assert "tlh" not in result.stdout
+    assert "review" not in result.stdout
+
+
 def test_portfolio_status_command_renders(monkeypatch) -> None:
     from tradeops.app import cli
 
-    monkeypatch.setattr(cli, "AlpacaClient", lambda: type("StubClient", (), {"get_portfolio_state": _portfolio_state})())
+    monkeypatch.setattr(cli, "AlpacaClient", lambda: StubClient(_portfolio_state))
 
     result = runner.invoke(app, ["portfolio", "status"])
 
     assert result.exit_code == 0
-    assert "Portfolio" in result.stdout
-    assert "Positions" in result.stdout
-    assert "VTI" in result.stdout
+    assert '"account_number": "PA123"' in result.stdout
+    assert '"symbol": "VTI"' in result.stdout
 
-
-def test_portfolio_status_command_shows_readable_error(monkeypatch) -> None:
+def test_rebalance_requires_valid_target_json(monkeypatch) -> None:
     from tradeops.app import cli
 
-    def _raise() -> PortfolioState:
-        raise ValueError("Missing required Alpaca credentials: TRADEOPS_ALPACA_API_KEY")
+    monkeypatch.setattr(cli, "AlpacaClient", lambda: StubClient(_portfolio_state))
+    monkeypatch.setattr(cli, "load_app_config", lambda: SimpleNamespace())
 
-    monkeypatch.setattr(cli, "AlpacaClient", lambda: type("StubClient", (), {"get_portfolio_state": _raise})())
-
-    result = runner.invoke(app, ["portfolio", "status"])
+    result = runner.invoke(app, ["rebalance", "--target-json", "{\"VOO\":0.6,\"QQQ\":0.3}"])
 
     assert result.exit_code == 1
-    assert "Missing required Alpaca credentials" in result.stdout
+    assert "sum to 1.00" in result.stdout
 
 
-def test_tlh_scan_command_renders(monkeypatch) -> None:
+def test_rebalance_builds_plan_from_json(monkeypatch) -> None:
     from tradeops.app import cli
 
-    monkeypatch.setattr(cli, "AlpacaClient", lambda: type("StubClient", (), {"get_portfolio_state": _portfolio_state})())
-    monkeypatch.setattr(
-        cli,
-        "load_app_config",
-        lambda: type(
-            "StubConfig",
-            (),
-            {
-                "replacement_map": {"VTI": "SCHB"},
-                "wash_sale_lookback_days": 30,
-                "tlh_loss_dollar_threshold": Decimal("200"),
-                "tlh_loss_percent_threshold": Decimal("5"),
-            },
-        )(),
-    )
-    monkeypatch.setattr(
-        cli,
-        "scan_tlh_candidates",
-        lambda portfolio, config: [
-            {
-                "symbol": "VTI",
-                "qty": Decimal("10"),
-                "unrealized_loss_dollars": Decimal("250"),
-                "unrealized_loss_percent": Decimal("10"),
-                "replacement_symbol": "SCHB",
-                "wash_sale_warning": "likely_ok",
-                "is_candidate": True,
-            }
-        ],
-    )
+    captured: dict[str, object] = {}
 
-    result = runner.invoke(app, ["tlh", "scan"])
+    monkeypatch.setattr(cli, "AlpacaClient", lambda: StubClient(_portfolio_state))
+    monkeypatch.setattr(cli, "load_app_config", lambda: SimpleNamespace())
+    monkeypatch.setattr(cli, "validate_plan", lambda plan, portfolio, config: [])
+
+    def _build(portfolio, config, target_allocations=None):
+        captured["targets"] = target_allocations
+        return Plan(
+            plan_id="rebalance-1",
+            plan_type=PlanType.REBALANCE,
+            created_at=datetime.now(UTC),
+            transition=PlanTransition(target_allocations=target_allocations or {}),
+            summary="rebalance plan",
+        )
+
+    monkeypatch.setattr(cli, "build_rebalance_plan", _build)
+
+    result = runner.invoke(app, ["rebalance", "--target-json", "{\"VOO\":0.8,\"NVDA\":0.2}"])
 
     assert result.exit_code == 0
-    assert "TLH Scan" in result.stdout
-    assert "VTI" in result.stdout
-    assert "SCHB" in result.stdout
+    assert captured["targets"] == {"VOO": Decimal("0.8"), "NVDA": Decimal("0.2")}
+    assert '"plan_id": "rebalance-1"' in result.stdout
+    assert '"plan_type": "rebalance"' in result.stdout

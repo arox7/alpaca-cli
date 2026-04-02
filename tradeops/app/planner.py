@@ -12,7 +12,6 @@ from tradeops.app.models import (
     PlanType,
     PortfolioState,
 )
-from tradeops.app.tlh import lookup_replacement_symbol
 
 
 def _resolve_created_at(created_at: datetime | None) -> datetime:
@@ -32,11 +31,7 @@ def _qty(value: Decimal) -> Decimal:
 
 
 def _position_market_value(position) -> Decimal | None:
-    if position.market_value is not None:
-        return position.market_value
-    if position.cost_basis is not None and position.unrealized_pl is not None:
-        return position.cost_basis + position.unrealized_pl
-    return None
+    return position.market_value
 
 
 def _position_price(position) -> Decimal | None:
@@ -44,76 +39,6 @@ def _position_price(position) -> Decimal | None:
     if market_value is None or position.qty <= 0:
         return None
     return market_value / position.qty
-
-
-def build_tlh_plan(
-    portfolio: PortfolioState,
-    config: AppConfig,
-    symbol: str,
-    created_at: datetime | None = None,
-) -> Plan:
-    normalized_symbol = symbol.upper()
-    position = next((item for item in portfolio.positions if item.symbol.upper() == normalized_symbol), None)
-    if position is None:
-        raise ValueError(f"No position found for {normalized_symbol}.")
-    replacement_symbol = lookup_replacement_symbol(normalized_symbol, config)
-    if replacement_symbol is None:
-        raise ValueError(f"No replacement symbol configured for {normalized_symbol}.")
-
-    created = _resolve_created_at(created_at)
-    plan_id = _plan_id("tlh", created, normalized_symbol)
-    sell_step_id = f"{plan_id}-sell"
-    buy_step_id = f"{plan_id}-buy"
-    replacement_notional = _position_market_value(position)
-    buy_order = OrderIntent(
-        step_id=buy_step_id,
-        symbol=replacement_symbol,
-        side=OrderSide.BUY,
-        notional=_money(replacement_notional) if replacement_notional is not None else None,
-        qty=position.qty if replacement_notional is None else None,
-        client_order_id_seed=buy_step_id,
-        depends_on_step_id=sell_step_id,
-        rationale=f"Buy configured TLH replacement for {normalized_symbol} after sale completes.",
-    )
-    sell_order = OrderIntent(
-        step_id=sell_step_id,
-        symbol=normalized_symbol,
-        side=OrderSide.SELL,
-        qty=position.qty,
-        client_order_id_seed=sell_step_id,
-        rationale=f"Harvest loss on {normalized_symbol}; review wash-sale risk manually.",
-    )
-
-    transition = PlanTransition(
-        source_symbol=normalized_symbol,
-        replacement_symbol=replacement_symbol,
-        expected_cash_delta=Decimal("0.00"),
-        notes=[
-            "Heuristic TLH plan only; not a complete wash-sale determination.",
-            "Buy step depends on sale completion.",
-        ],
-    )
-    analysis = {
-        "source_symbol": normalized_symbol,
-        "replacement_symbol": replacement_symbol,
-        "position_qty": str(position.qty),
-        "market_value": str(replacement_notional) if replacement_notional is not None else None,
-        "unrealized_pl": str(position.unrealized_pl) if position.unrealized_pl is not None else None,
-        "unrealized_plpc": str(position.unrealized_plpc) if position.unrealized_plpc is not None else None,
-    }
-    return Plan(
-        plan_id=plan_id,
-        plan_type=PlanType.TLH,
-        created_at=created,
-        assumptions=[
-            "Plan is generated from normalized portfolio state only.",
-            "Execution is regular-hours, paper-only, and reviewable before submit.",
-        ],
-        orders=[sell_order, buy_order],
-        transition=transition,
-        analysis=analysis,
-        summary=f"Sell {normalized_symbol} then buy {replacement_symbol} as a TLH replacement.",
-    )
 
 
 def build_rebalance_plan(
@@ -125,15 +50,15 @@ def build_rebalance_plan(
     allocations = target_allocations or config.target_allocations
     if not allocations:
         raise ValueError("Target allocations are required for rebalance planning.")
+    total_weight = sum(allocations.values())
+    if total_weight != Decimal("1"):
+        raise ValueError(f"Target allocations must sum to 1.00. Received {total_weight}.")
 
     created = _resolve_created_at(created_at)
     plan_id = _plan_id("rebalance", created, "portfolio")
     equity = portfolio.account.equity
     if equity is None:
-        derived_equity = sum(
-            (_position_market_value(position) or Decimal("0")) for position in portfolio.positions
-        ) + (portfolio.account.cash or Decimal("0"))
-        equity = derived_equity
+        raise ValueError("Account equity is required for rebalance planning.")
     investable_equity = max(equity - config.cash_buffer, Decimal("0"))
 
     positions_by_symbol = {position.symbol.upper(): position for position in portfolio.positions}
@@ -199,6 +124,36 @@ def build_rebalance_plan(
             }
         )
 
+    for symbol, position in positions_by_symbol.items():
+        if symbol in allocations or position.qty <= 0:
+            continue
+        current_value = _position_market_value(position)
+        price = _position_price(position)
+        if current_value is None or price is None or price <= 0:
+            continue
+        if current_value < config.min_trade_notional:
+            drift_rows.append(
+                {
+                    "symbol": symbol,
+                    "current_value": str(_money(current_value)),
+                    "target_value": str(Decimal("0.00")),
+                    "trade_delta": str(_money(-current_value)),
+                    "action": "hold",
+                }
+            )
+            continue
+        sell_candidates.append((symbol, position.qty, current_value, Decimal("0")))
+        expected_cash_delta += current_value
+        drift_rows.append(
+            {
+                "symbol": symbol,
+                "current_value": str(_money(current_value)),
+                "target_value": str(Decimal("0.00")),
+                "trade_delta": str(_money(-current_value)),
+                "action": "sell",
+            }
+        )
+
     step_index = 1
     for normalized_symbol, sell_qty, _current_value, _target_value in sell_candidates:
         step_id = f"{plan_id}-step-{step_index}"
@@ -247,7 +202,11 @@ def build_rebalance_plan(
         analysis={
             "equity": str(_money(equity)),
             "investable_equity": str(_money(investable_equity)),
+            "cash_buffer": str(_money(config.cash_buffer)),
             "drift_rows": drift_rows,
         },
-        summary=f"Rebalance toward {len(allocations)} target allocations.",
+        summary=(
+            f"Move the portfolio toward {len(allocations)} explicit target allocations "
+            f"using deterministic sell-first then buy sequencing."
+        ),
     )

@@ -18,6 +18,7 @@ class StubAccount:
     buying_power = "10000"
     cash = "2500"
     equity = "12500"
+    last_equity = "13000"
     updated_at = "2026-04-01T09:30:00Z"
 
 
@@ -38,11 +39,15 @@ class StubOrder:
         self.symbol = "VTI"
         self.side = "sell"
         self.qty = "10"
+        self.filled_qty = "5"
         self.notional = None
         self.order_type = "market"
         self.time_in_force = "day"
         self.status = "new"
         self.created_at = "2026-04-01T10:00:00Z"
+        self.filled_at = "2026-04-01T10:01:00Z"
+        self.expired_at = "2026-04-01T16:00:00Z"
+        self.filled_avg_price = "250.50"
 
 
 class StubActivity:
@@ -77,8 +82,8 @@ class StubTradingClient:
         return [StubPosition("VTI", "10", "2500", "2750", "-250")]
 
     def get_orders(self, status: str = "open", limit: int = 100) -> list[StubOrder]:
-        assert status == "open"
-        assert limit == 100
+        assert status in {"open", "all"}
+        assert limit in {20, 100}
         return [StubOrder()]
 
     def get_activities(self) -> list[StubActivity]:
@@ -114,6 +119,7 @@ def test_get_account_normalizes_stubbed_account() -> None:
     assert account.status == "ACTIVE"
     assert account.is_paper is True
     assert account.buying_power == Decimal("10000")
+    assert account.last_equity == Decimal("13000")
     assert account.updated_at == datetime.fromisoformat("2026-04-01T09:30:00+00:00")
 
 
@@ -150,10 +156,14 @@ def test_get_orders_normalizes_stubbed_models_without_alpaca_imports(monkeypatch
     assert orders[0].symbol == "VTI"
     assert orders[0].side is OrderSide.SELL
     assert orders[0].qty == Decimal("10")
+    assert orders[0].filled_qty == Decimal("5")
+    assert orders[0].avg_fill_price == Decimal("250.50")
     assert orders[0].type == "market"
     assert orders[0].time_in_force == "day"
     assert orders[0].status == "new"
     assert orders[0].created_at == datetime.fromisoformat("2026-04-01T10:00:00+00:00")
+    assert orders[0].filled_at == datetime.fromisoformat("2026-04-01T10:01:00+00:00")
+    assert orders[0].expires_at == datetime.fromisoformat("2026-04-01T16:00:00+00:00")
 
 
 def test_get_activities_normalizes_primary_activity_method() -> None:
@@ -197,6 +207,7 @@ def test_get_portfolio_state_normalizes_stubbed_models() -> None:
     assert portfolio.positions[0].symbol == "VTI"
     assert portfolio.positions[0].unrealized_pl == Decimal("-250")
     assert portfolio.open_orders[0].type == "market"
+    assert portfolio.recent_orders[0].filled_qty == Decimal("5")
     assert portfolio.activities[0].activity_type == "fill"
 
 

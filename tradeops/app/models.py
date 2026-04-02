@@ -9,20 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PlanType(StrEnum):
-    TLH = "tlh"
     REBALANCE = "rebalance"
-    SELL_THEN_BUY = "sell_then_buy"
+    TRADE = "trade"
+
+
+class IntentType(StrEnum):
+    REBALANCE = "rebalance"
 
 
 class OrderSide(StrEnum):
     BUY = "buy"
     SELL = "sell"
-
-
-class WashSaleWarning(StrEnum):
-    LIKELY_OK = "likely_ok"
-    CAUTION = "caution"
-    BLOCKED = "blocked"
 
 
 class Account(BaseModel):
@@ -35,6 +32,7 @@ class Account(BaseModel):
     buying_power: Decimal | None = None
     cash: Decimal | None = None
     equity: Decimal | None = None
+    last_equity: Decimal | None = None
     updated_at: datetime | None = None
 
 
@@ -57,11 +55,16 @@ class BrokerOrder(BaseModel):
     symbol: str
     side: OrderSide
     qty: Decimal | None = None
+    filled_qty: Decimal | None = None
     notional: Decimal | None = None
+    avg_fill_price: Decimal | None = None
     type: str
     time_in_force: str
     status: str
     created_at: datetime | None = None
+    filled_at: datetime | None = None
+    expires_at: datetime | None = None
+    source: str | None = None
 
 
 class BrokerActivity(BaseModel):
@@ -84,6 +87,7 @@ class PortfolioState(BaseModel):
     account: Account
     positions: list[Position] = Field(default_factory=list)
     open_orders: list[BrokerOrder] = Field(default_factory=list)
+    recent_orders: list[BrokerOrder] = Field(default_factory=list)
     activities: list[BrokerActivity] = Field(default_factory=list)
 
 
@@ -114,8 +118,6 @@ class ValidationIssue(BaseModel):
 class PlanTransition(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    source_symbol: str | None = None
-    replacement_symbol: str | None = None
     target_allocations: dict[str, Decimal] = Field(default_factory=dict)
     expected_cash_delta: Decimal | None = None
     notes: list[str] = Field(default_factory=list)
@@ -135,6 +137,16 @@ class Plan(BaseModel):
     summary: str | None = None
 
 
+class RebalanceIntent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    intent_type: IntentType = IntentType.REBALANCE
+    source_text: str
+    requested_at: datetime
+    target_allocations: dict[str, Decimal]
+    requested_date: str | None = None
+
+
 class Run(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -151,7 +163,6 @@ class Run(BaseModel):
 class AppConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    replacement_map: dict[str, str] = Field(default_factory=dict)
     target_allocations: dict[str, Decimal] = Field(default_factory=dict)
     drift_threshold_percent: Decimal = Decimal("5")
     min_trade_notional: Decimal = Decimal("100")
@@ -160,6 +171,3 @@ class AppConfig(BaseModel):
     regular_hours_only: bool = True
     max_order_count: int = 10
     allow_partial_fill_continuation: bool = False
-    tlh_loss_dollar_threshold: Decimal = Decimal("200")
-    tlh_loss_percent_threshold: Decimal = Decimal("5")
-    wash_sale_lookback_days: int = 30

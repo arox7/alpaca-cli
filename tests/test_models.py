@@ -21,19 +21,16 @@ def test_plan_and_order_models_validate() -> None:
     )
     plan = Plan(
         plan_id="plan-123",
-        plan_type=PlanType.TLH,
+        plan_type=PlanType.REBALANCE,
         created_at=datetime.now(UTC),
         orders=[order],
-        transition=PlanTransition(
-            source_symbol="VTI",
-            replacement_symbol="SCHB",
-        ),
+        transition=PlanTransition(target_allocations={"VTI": Decimal("1.0")}),
     )
 
     assert plan.plan_id == "plan-123"
     assert plan.orders[0].symbol == "VTI"
     assert plan.orders[0].type == "market"
-    assert plan.transition.replacement_symbol == "SCHB"
+    assert plan.transition.target_allocations["VTI"] == Decimal("1.0")
 
 
 def test_plan_validation_issues_are_simple() -> None:

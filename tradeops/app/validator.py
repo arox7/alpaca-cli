@@ -48,14 +48,6 @@ def validate_plan(plan: Plan, portfolio: PortfolioState, config: AppConfig) -> l
             )
         )
 
-    if plan.transition.source_symbol and not plan.transition.replacement_symbol:
-        issues.append(
-            ValidationIssue(
-                code="missing_replacement_symbol",
-                message="TLH plan requires a configured replacement symbol.",
-            )
-        )
-
     open_symbols = {
         order.symbol.upper()
         for order in portfolio.open_orders
@@ -63,6 +55,9 @@ def validate_plan(plan: Plan, portfolio: PortfolioState, config: AppConfig) -> l
     }
     positions_by_symbol = {position.symbol.upper(): position for position in portfolio.positions}
     step_ids = {order.step_id for order in plan.orders}
+    available_funds = portfolio.account.buying_power or portfolio.account.cash or Decimal("0")
+    projected_sell_proceeds = Decimal("0")
+    projected_buy_cost = Decimal("0")
 
     for order in plan.orders:
         symbol = order.symbol.upper()
@@ -132,5 +127,19 @@ def validate_plan(plan: Plan, portfolio: PortfolioState, config: AppConfig) -> l
                         message=f"Sell order {order.step_id} exceeds available quantity for {symbol}.",
                     )
                 )
+            if estimated_notional is not None:
+                projected_sell_proceeds += estimated_notional
+        elif estimated_notional is not None:
+            projected_buy_cost += estimated_notional
+
+    if projected_buy_cost > available_funds + projected_sell_proceeds:
+        issues.append(
+            ValidationIssue(
+                code="insufficient_buying_power",
+                message=(
+                    "Plan buy exposure exceeds available cash/buying power plus projected sell proceeds."
+                ),
+            )
+        )
 
     return issues

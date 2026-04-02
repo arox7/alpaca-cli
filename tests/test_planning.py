@@ -1,30 +1,24 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
-
-import pytest
 
 from tradeops.app.models import (
     Account,
     AppConfig,
-    BrokerActivity,
     BrokerOrder,
+    OrderIntent,
     OrderSide,
-    PortfolioState,
-    Position,
     Plan,
     PlanTransition,
     PlanType,
-    OrderIntent,
+    PortfolioState,
+    Position,
 )
-from tradeops.app.planner import build_rebalance_plan, build_tlh_plan
-from tradeops.app.tlh import lookup_replacement_symbol, scan_tlh_candidates
+from tradeops.app.planner import build_rebalance_plan
 from tradeops.app.validator import validate_plan
 
 
-@pytest.fixture
-def app_config() -> AppConfig:
+def _app_config() -> AppConfig:
     return AppConfig(
-        replacement_map={"VTI": "SCHB", "IVV": "VOO"},
         target_allocations={
             "VTI": Decimal("0.50"),
             "VXUS": Decimal("0.20"),
@@ -33,18 +27,16 @@ def app_config() -> AppConfig:
         drift_threshold_percent=Decimal("5"),
         min_trade_notional=Decimal("100"),
         cash_buffer=Decimal("500"),
+        paper_only=True,
+        regular_hours_only=True,
         max_order_count=2,
-        tlh_loss_dollar_threshold=Decimal("200"),
-        tlh_loss_percent_threshold=Decimal("5"),
-        wash_sale_lookback_days=30,
+        allow_partial_fill_continuation=False,
     )
 
 
-@pytest.fixture
-def portfolio_state() -> PortfolioState:
-    captured_at = datetime(2026, 4, 1, 14, 30, tzinfo=UTC)
+def _portfolio_state() -> PortfolioState:
     return PortfolioState(
-        captured_at=captured_at,
+        captured_at=datetime(2026, 4, 1, 14, 30, tzinfo=UTC),
         account=Account(
             account_id="acct-1",
             account_number="PA123",
@@ -79,103 +71,34 @@ def portfolio_state() -> PortfolioState:
                 unrealized_pl=Decimal("100"),
                 unrealized_plpc=Decimal("0.052631"),
             ),
+            Position(
+                symbol="XLK",
+                qty=Decimal("4"),
+                market_value=Decimal("800"),
+                cost_basis=Decimal("700"),
+                unrealized_pl=Decimal("100"),
+                unrealized_plpc=Decimal("0.142857"),
+            ),
         ],
         open_orders=[],
-        activities=[
-            BrokerActivity(
-                activity_id="act-1",
-                activity_type="FILL",
-                symbol="SCHB",
-                side="buy",
-                qty=Decimal("1"),
-                price=Decimal("50"),
-                occurred_at=captured_at - timedelta(days=5),
-            )
-        ],
     )
 
 
-def test_replacement_lookup_uses_config_map(app_config: AppConfig) -> None:
-    assert lookup_replacement_symbol("VTI", app_config) == "SCHB"
-    assert lookup_replacement_symbol("MISSING", app_config) is None
-
-
-def test_tlh_scan_selects_only_eligible_candidates(
-    portfolio_state: PortfolioState,
-    app_config: AppConfig,
-) -> None:
-    rows = scan_tlh_candidates(portfolio_state, app_config)
-
-    vti_row = next(row for row in rows if row["symbol"] == "VTI")
-    vxus_row = next(row for row in rows if row["symbol"] == "VXUS")
-
-    assert vti_row["is_candidate"] is True
-    assert vti_row["replacement_symbol"] == "SCHB"
-    assert vti_row["wash_sale_warning"] == "caution"
-    assert vxus_row["is_candidate"] is False
-    assert vxus_row["has_replacement"] is False
-
-
-def test_tlh_scan_rejects_conflicting_open_orders(
-    portfolio_state: PortfolioState,
-    app_config: AppConfig,
-) -> None:
-    conflicted_state = portfolio_state.model_copy(
-        update={
-            "open_orders": [
-                BrokerOrder(
-                    order_id="ord-1",
-                    symbol="VTI",
-                    side=OrderSide.SELL,
-                    qty=Decimal("1"),
-                    type="market",
-                    time_in_force="day",
-                    status="new",
-                )
-            ]
-        }
-    )
-    rows = scan_tlh_candidates(conflicted_state, app_config)
-    vti_row = next(row for row in rows if row["symbol"] == "VTI")
-    assert vti_row["is_candidate"] is False
-    assert vti_row["has_conflicting_open_orders"] is True
-
-
-def test_tlh_plan_generation_builds_sell_then_buy(
-    portfolio_state: PortfolioState,
-    app_config: AppConfig,
-) -> None:
-    created_at = datetime(2026, 4, 1, 15, 0, tzinfo=UTC)
-    plan = build_tlh_plan(portfolio_state, app_config, "VTI", created_at=created_at)
-
-    assert plan.plan_type == PlanType.TLH
-    assert len(plan.orders) == 2
-    assert plan.orders[0].side == OrderSide.SELL
-    assert plan.orders[1].side == OrderSide.BUY
-    assert plan.orders[1].depends_on_step_id == plan.orders[0].step_id
-    assert plan.transition.source_symbol == "VTI"
-    assert plan.transition.replacement_symbol == "SCHB"
-
-
-def test_rebalance_plan_generation_builds_reviewable_orders(
-    portfolio_state: PortfolioState,
-    app_config: AppConfig,
-) -> None:
-    created_at = datetime(2026, 4, 1, 15, 0, tzinfo=UTC)
-    plan = build_rebalance_plan(portfolio_state, app_config, created_at=created_at)
+def test_rebalance_plan_generation_builds_reviewable_orders() -> None:
+    plan = build_rebalance_plan(_portfolio_state(), _app_config(), created_at=datetime(2026, 4, 1, 15, 0, tzinfo=UTC))
 
     assert plan.plan_type == PlanType.REBALANCE
-    assert [order.symbol for order in plan.orders] == ["VXUS", "VTI", "BND"]
+    assert [order.symbol for order in plan.orders] == ["VXUS", "XLK", "VTI", "BND"]
     assert plan.orders[0].side == OrderSide.SELL
-    assert plan.orders[1].depends_on_step_id == plan.orders[0].step_id
-    assert plan.orders[2].depends_on_step_id == plan.orders[0].step_id
+    assert plan.orders[1].side == OrderSide.SELL
+    assert plan.orders[2].depends_on_step_id == plan.orders[1].step_id
+    assert plan.orders[3].depends_on_step_id == plan.orders[1].step_id
     assert plan.transition.target_allocations["VTI"] == Decimal("0.50")
 
 
-def test_validator_returns_expected_blockers(
-    portfolio_state: PortfolioState,
-    app_config: AppConfig,
-) -> None:
+def test_validator_returns_expected_blockers() -> None:
+    app_config = _app_config()
+    portfolio_state = _portfolio_state()
     conflicted_state = portfolio_state.model_copy(
         update={
             "account": portfolio_state.account.model_copy(update={"is_paper": False}),
@@ -194,7 +117,7 @@ def test_validator_returns_expected_blockers(
     )
     invalid_plan = Plan(
         plan_id="plan-1",
-        plan_type=PlanType.TLH,
+        plan_type=PlanType.TRADE,
         created_at=datetime(2026, 4, 1, 15, 0, tzinfo=UTC),
         orders=[
             OrderIntent(
@@ -220,7 +143,7 @@ def test_validator_returns_expected_blockers(
                 client_order_id_seed="buy-schb",
             ),
         ],
-        transition=PlanTransition(source_symbol="VTI"),
+        transition=PlanTransition(),
     )
 
     issues = validate_plan(invalid_plan, conflicted_state, app_config)
@@ -228,8 +151,39 @@ def test_validator_returns_expected_blockers(
 
     assert "paper_only" in codes
     assert "conflicting_open_orders" in codes
-    assert "missing_replacement_symbol" in codes
     assert "max_order_count_exceeded" in codes
     assert "oversized_sell" in codes
     assert "missing_dependency" in codes
     assert "below_min_trade_notional" in codes
+
+
+def test_validator_blocks_insufficient_buying_power() -> None:
+    app_config = _app_config()
+    portfolio_state = _portfolio_state()
+    constrained_state = portfolio_state.model_copy(
+        update={
+            "account": portfolio_state.account.model_copy(
+                update={"buying_power": Decimal("100"), "cash": Decimal("100")}
+            )
+        }
+    )
+    plan = Plan(
+        plan_id="plan-buy-heavy",
+        plan_type=PlanType.REBALANCE,
+        created_at=datetime(2026, 4, 1, 15, 0, tzinfo=UTC),
+        orders=[
+            OrderIntent(
+                step_id="buy-vxus",
+                symbol="VXUS",
+                side=OrderSide.BUY,
+                notional=Decimal("500"),
+                client_order_id_seed="buy-vxus",
+            )
+        ],
+        transition=PlanTransition(target_allocations={"VXUS": Decimal("1.0")}),
+    )
+
+    issues = validate_plan(plan, constrained_state, app_config)
+    codes = {issue.code for issue in issues}
+
+    assert "insufficient_buying_power" in codes

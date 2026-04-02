@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from tradeops.app.config import AppSettings, validate_alpaca_settings
-from tradeops.app.models import Account, BrokerActivity, BrokerOrder, OrderSide, PortfolioState, Position
+from tradeops.app.models import Account, BrokerActivity, BrokerOrder, OrderIntent, OrderSide, PortfolioState, Position
 
 
 def _as_decimal(value: Any) -> Decimal | None:
@@ -29,6 +29,14 @@ def _string_attr(raw: Any, *names: str) -> str | None:
         if value is not None and value != "":
             return str(value)
     return None
+
+
+def _string_value(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
 
 
 def _activity_timestamp(raw: Any) -> datetime | None:
@@ -59,6 +67,20 @@ def _normalize_activity_side(value: Any) -> str | None:
     return None
 
 
+def _normalize_order_source(item: Any) -> str | None:
+    source = _string_value(getattr(item, "source", None))
+    if source:
+        return source
+    client_order_id = _string_attr(item, "client_order_id")
+    if not client_order_id:
+        return None
+    if client_order_id == "access_key":
+        return "access_key"
+    if len(client_order_id) > 12:
+        return f"{client_order_id[:8]}..."
+    return client_order_id
+
+
 class AlpacaClient:
     """Thin read-only wrapper around alpaca-py's TradingClient for MVP broker state."""
 
@@ -76,12 +98,15 @@ class AlpacaClient:
                 "alpaca-py is not installed. Install project dependencies before using broker commands."
             ) from exc
 
-        self._trading_client = TradingClient(
-            api_key=self.settings.alpaca_api_key,
-            secret_key=self.settings.alpaca_secret_key,
-            paper=True,
-            url_override=self.settings.alpaca_base_url,
-        )
+        kwargs = {
+            "api_key": self.settings.alpaca_api_key,
+            "secret_key": self.settings.alpaca_secret_key,
+            "paper": True,
+        }
+        if self.settings.normalized_alpaca_base_url != "https://paper-api.alpaca.markets":
+            kwargs["url_override"] = self.settings.normalized_alpaca_base_url
+
+        self._trading_client = TradingClient(**kwargs)
         return self._trading_client
 
     def _order_filter(self, status: str, limit: int) -> Any:
@@ -97,11 +122,35 @@ class AlpacaClient:
 
         return GetOrdersRequest(status=QueryOrderStatus(status), limit=limit)
 
+    def _normalize_order(self, item: Any) -> BrokerOrder:
+        return BrokerOrder(
+            order_id=str(getattr(item, "id", "")),
+            client_order_id=getattr(item, "client_order_id", None),
+            symbol=str(getattr(item, "symbol", "")),
+            side=_normalize_order_side(getattr(item, "side", "")),
+            qty=_as_decimal(getattr(item, "qty", None)),
+            filled_qty=_as_decimal(getattr(item, "filled_qty", None)),
+            notional=_as_decimal(getattr(item, "notional", None)),
+            avg_fill_price=_as_decimal(getattr(item, "filled_avg_price", None)),
+            type=(_string_value(getattr(item, "order_type", getattr(item, "type", "market"))) or "market").lower(),
+            time_in_force=(_string_value(getattr(item, "time_in_force", "day")) or "day").lower(),
+            status=_string_value(getattr(item, "status", "")) or "",
+            created_at=_as_datetime(getattr(item, "created_at", None)),
+            filled_at=_as_datetime(getattr(item, "filled_at", None)),
+            expires_at=_as_datetime(
+                getattr(item, "expired_at", getattr(item, "expires_at", None))
+            ),
+            source=_normalize_order_source(item),
+        )
+
     def _get_orders_raw(self, status: str, limit: int) -> list[Any]:
         client = self._client()
         request = self._order_filter(status=status, limit=limit)
         if request is not None:
-            return client.get_orders(filter=request)
+            try:
+                return client.get_orders(filter=request)
+            except TypeError:
+                pass
 
         try:
             return client.get_orders(status=status, limit=limit)
@@ -131,11 +180,12 @@ class AlpacaClient:
         return Account(
             account_id=str(getattr(raw, "id", "")),
             account_number=getattr(raw, "account_number", None),
-            status=str(getattr(raw, "status", "")),
+            status=_string_value(getattr(raw, "status", "")) or "",
             is_paper=self.settings.paper_mode,
             buying_power=_as_decimal(getattr(raw, "buying_power", None)),
             cash=_as_decimal(getattr(raw, "cash", None)),
             equity=_as_decimal(getattr(raw, "equity", None)),
+            last_equity=_as_decimal(getattr(raw, "last_equity", None)),
             updated_at=_as_datetime(getattr(raw, "updated_at", getattr(raw, "created_at", None))),
         )
 
@@ -155,21 +205,50 @@ class AlpacaClient:
 
     def get_orders(self, status: str = "open", limit: int = 100) -> list[BrokerOrder]:
         orders = self._get_orders_raw(status=status, limit=limit)
-        return [
-            BrokerOrder(
-                order_id=str(getattr(item, "id", "")),
-                client_order_id=getattr(item, "client_order_id", None),
-                symbol=str(getattr(item, "symbol", "")),
-                side=_normalize_order_side(getattr(item, "side", "")),
-                qty=_as_decimal(getattr(item, "qty", None)),
-                notional=_as_decimal(getattr(item, "notional", None)),
-                type=str(getattr(item, "order_type", getattr(item, "type", "market"))).lower(),
-                time_in_force=str(getattr(item, "time_in_force", "day")).lower(),
-                status=str(getattr(item, "status", "")),
-                created_at=_as_datetime(getattr(item, "created_at", None)),
+        return [self._normalize_order(item) for item in orders]
+
+    def get_order_by_id(self, order_id: str) -> BrokerOrder:
+        raw = self._client().get_order_by_id(order_id)
+        return self._normalize_order(raw)
+
+    def submit_order_intent(self, intent: OrderIntent) -> BrokerOrder:
+        if (intent.qty is None) == (intent.notional is None):
+            raise ValueError(f"Order {intent.step_id} must include exactly one of qty or notional.")
+
+        client = self._client()
+        request = None
+        try:
+            from alpaca.trading.enums import OrderSide as AlpacaOrderSide
+            from alpaca.trading.enums import TimeInForce
+            from alpaca.trading.requests import MarketOrderRequest
+
+            request = MarketOrderRequest(
+                symbol=intent.symbol,
+                side=AlpacaOrderSide(intent.side.value),
+                time_in_force=TimeInForce(intent.time_in_force),
+                qty=float(intent.qty) if intent.qty is not None else None,
+                notional=float(intent.notional) if intent.notional is not None else None,
+                client_order_id=intent.client_order_id_seed,
+                extended_hours=intent.extended_hours,
             )
-            for item in orders
-        ]
+        except ImportError:
+            request = None
+
+        if request is not None:
+            raw = client.submit_order(order_data=request)
+            return self._normalize_order(raw)
+
+        raw = client.submit_order(
+            symbol=intent.symbol,
+            side=intent.side.value,
+            qty=str(intent.qty) if intent.qty is not None else None,
+            notional=str(intent.notional) if intent.notional is not None else None,
+            type=intent.type,
+            time_in_force=intent.time_in_force,
+            client_order_id=intent.client_order_id_seed,
+            extended_hours=intent.extended_hours,
+        )
+        return self._normalize_order(raw)
 
     def get_activities(self) -> list[BrokerActivity]:
         activities: list[BrokerActivity] = []
@@ -203,5 +282,6 @@ class AlpacaClient:
             account=self.get_account(),
             positions=self.get_all_positions(),
             open_orders=self.get_orders(status="open"),
+            recent_orders=self.get_orders(status="all", limit=20),
             activities=self.get_activities(),
         )
